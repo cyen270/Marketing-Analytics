@@ -4,6 +4,7 @@ author: "Calvin Yen"
 date: "2/12/2022"
 output: 
   html_document:
+    toc: true
     keep_md: true
 ---
 
@@ -66,7 +67,7 @@ Partworth estimation was performed at individual, aggregate, and segment levels.
 
 ### Individual-level estimation
 
-Partworth utilities were first estimated at an individual level.  Profiles were then predicted for each individual by taking the profile with the highest utility.  Profile selections were correctly predicted for 54 of 87 (62%) of respondents. 
+Partworth utilities were first estimated at an individual level.  Profiles were then predicted for each individual by taking the profile with the highest utility.  Profile selections were correctly predicted for 54 of 87 (62%) of respondents. The model struggles to predict profiles that are preferred by few respondents (e.g., profiles 2, 7, 12). 
 
 ```{r indiv}
 # Compute partworth utilities for each individual
@@ -85,6 +86,15 @@ indiv_profile_actual <- apply(cprefm, 1, which.max)
 
 # Find proportion of correct predictions
 sum(indiv_profile_pred == indiv_profile_actual) / length(indiv_profile_actual)
+
+# Confusion matrix
+conf_mat <- data.frame(table(indiv_profile_pred, indiv_profile_actual))
+ggplot(conf_mat, aes(x=indiv_profile_pred, y=indiv_profile_actual, fill=Freq)) +
+  geom_tile() +
+  scale_fill_gradient(low='white', high='blue') +
+  labs(title='Individual-level Model: Confusion Matrix',
+       x='Predicted Profile', 
+       y='Actual Profile')
 
 # Determine attribute importances for first 10 individuals
 attr_importances <- caImportance(y=cprefm[1,], cprof)
@@ -199,7 +209,7 @@ ggplot(pc_clusters, aes(x=PC1, y=PC2)) +
 
 ```
 
-## Cluster-based Model
+## Cluster-level Estimation
 
 The results of the cluster analysis were used to build a cluster-based model--respondents' chocolate preferences were predicted based on their cluster (i.e., segment). The cluster-level model outperformed the aggregate model, but does not sufficiently capture individualized preferences.  Increasing the number of clusters may raise this model's performance.  
 

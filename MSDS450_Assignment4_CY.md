@@ -4,6 +4,7 @@ author: "Calvin Yen"
 date: "2/12/2022"
 output: 
   html_document:
+    toc: true
     keep_md: true
 ---
 
@@ -168,7 +169,7 @@ Partworth estimation was performed at individual, aggregate, and segment levels.
 
 ### Individual-level estimation
 
-Partworth utilities were first estimated at an individual level.  Profiles were then predicted for each individual by taking the profile with the highest utility.  Profile selections were correctly predicted for 54 of 87 (62%) of respondents. 
+Partworth utilities were first estimated at an individual level.  Profiles were then predicted for each individual by taking the profile with the highest utility.  Profile selections were correctly predicted for 54 of 87 (62%) of respondents. The model struggles to predict profiles that are preferred by few respondents (e.g., profiles 2, 7, 12). 
 
 
 ```r
@@ -231,6 +232,19 @@ sum(indiv_profile_pred == indiv_profile_actual) / length(indiv_profile_actual)
 ```
 ## [1] 0.6206897
 ```
+
+```r
+# Confusion matrix
+conf_mat <- data.frame(table(indiv_profile_pred, indiv_profile_actual))
+ggplot(conf_mat, aes(x=indiv_profile_pred, y=indiv_profile_actual, fill=Freq)) +
+  geom_tile() +
+  scale_fill_gradient(low='white', high='blue') +
+  labs(title='Individual-level Model: Confusion Matrix',
+       x='Predicted Profile', 
+       y='Actual Profile')
+```
+
+![](MSDS450_Assignment4_CY_files/figure-html/indiv-1.png)<!-- -->
 
 ```r
 # Determine attribute importances for first 10 individuals
@@ -468,7 +482,7 @@ ggplot(pc_clusters, aes(x=PC1, y=PC2)) +
 
 ![](MSDS450_Assignment4_CY_files/figure-html/clustering-2.png)<!-- -->
 
-## Cluster-based Model
+## Cluster-level Estimation
 
 The results of the cluster analysis were used to build a cluster-based model--respondents' chocolate preferences were predicted based on their cluster (i.e., segment). The cluster-level model outperformed the aggregate model, but does not sufficiently capture individualized preferences.  Increasing the number of clusters may raise this model's performance.  
 
@@ -481,21 +495,21 @@ cluster_coef
 
 ```
 ##   intercept       milk     walnut delicaties      dark       low
-## 1  8.378071  1.7857143  1.3392857 -4.5000000  1.375000 0.1549286
-## 2  7.952286  0.8035714  0.2321429  0.3750000 -1.410714 2.2739286
-## 3  8.513889 -3.1111111 -3.2222222  2.5000000  3.833333 0.1667778
+## 1  7.952286  0.8035714  0.2321429  0.3750000 -1.410714 2.2739286
+## 2  8.513889 -3.1111111 -3.2222222  2.5000000  3.833333 0.1667778
+## 3  8.378071  1.7857143  1.3392857 -4.5000000  1.375000 0.1549286
 ## 4  8.432292 -1.2291667  2.0208333  4.3020833 -5.093750 0.1597500
 ## 5  8.299692  4.4615385  0.8557692  0.4711538 -5.788462 0.3975000
 ##       average       high   paperback    hardback       light     middle
-## 1 -0.37185714  0.2174286 -0.18750000  0.18750000  0.33335714  0.5297857
-## 2  0.19357143 -2.4671429  0.16071429 -0.16071429 -0.08335714 -0.3422857
-## 3  0.04177778 -0.2082222 -0.18055556  0.18055556 -0.22233333  0.1387778
+## 1  0.19357143 -2.4671429  0.16071429 -0.16071429 -0.08335714 -0.3422857
+## 2  0.04177778 -0.2082222 -0.18055556  0.18055556 -0.22233333  0.1387778
+## 3 -0.37185714  0.2174286 -0.18750000  0.18750000  0.33335714  0.5297857
 ## 4 -0.26212500  0.1024583  0.12500000 -0.12500000  0.11112500 -0.3888750
 ## 5 -0.07365385 -0.3236538  0.05769231 -0.05769231  0.40388462 -0.3701538
 ##         heavy    little       much
-## 1 -0.86307143 0.2053571 -0.2053571
-## 2  0.42557143 2.2321429 -2.2321429
-## 3  0.08322222 0.5416667 -0.5416667
+## 1  0.42557143 2.2321429 -2.2321429
+## 2  0.08322222 0.5416667 -0.5416667
+## 3 -0.86307143 0.2053571 -0.2053571
 ## 4  0.27779167 0.2239583 -0.2239583
 ## 5 -0.03361538 0.4567308 -0.4567308
 ```
@@ -511,22 +525,22 @@ cluster_prof_utilities
 
 ```
 ##            1         2         3         4         5
-## 1   4.642643  7.910357 11.305222 12.796833  8.591269
-## 2   3.821714  6.044643 10.472222 12.234417  8.586654
-## 3  10.598500 12.446429  5.958333 10.822958 10.355885
-## 4  10.634214 10.803571 13.013889  3.708375  3.711654
-## 5  10.303857  8.464286 13.250000  2.786500  2.466462
-## 6  10.830643  8.294643  5.347222  6.625042 12.274154
-## 7   9.910500  1.919286 11.194111  3.453083  2.192231
-## 8   8.946643 11.767929  5.889222  7.567708 13.168269
-## 9   3.152000  8.634000 10.903111 12.822917  8.620192
-## 10  4.384214 12.910714 11.319444 13.354208 10.086654
-## 11 10.696214  3.812143  4.610778  7.067667 12.326846
-## 12  9.286000  6.223214  4.388889 10.203167  9.086654
-## 13  9.464000  8.214000  5.888889 10.932208  9.196923
-## 14 10.669929 13.339286  5.708333  7.822958 14.077038
-## 15  8.652000  7.169714 11.875333  3.677083  2.475962
-## 16 10.009214  8.044643  4.875000 10.125042  8.783769
+## 1   7.910357 11.305222  4.642643 12.796833  8.591269
+## 2   6.044643 10.472222  3.821714 12.234417  8.586654
+## 3  12.446429  5.958333 10.598500 10.822958 10.355885
+## 4  10.803571 13.013889 10.634214  3.708375  3.711654
+## 5   8.464286 13.250000 10.303857  2.786500  2.466462
+## 6   8.294643  5.347222 10.830643  6.625042 12.274154
+## 7   1.919286 11.194111  9.910500  3.453083  2.192231
+## 8  11.767929  5.889222  8.946643  7.567708 13.168269
+## 9   8.634000 10.903111  3.152000 12.822917  8.620192
+## 10 12.910714 11.319444  4.384214 13.354208 10.086654
+## 11  3.812143  4.610778 10.696214  7.067667 12.326846
+## 12  6.223214  4.388889  9.286000 10.203167  9.086654
+## 13  8.214000  5.888889  9.464000 10.932208  9.196923
+## 14 13.339286  5.708333 10.669929  7.822958 14.077038
+## 15  7.169714 11.875333  8.652000  3.677083  2.475962
+## 16  8.044643  4.875000 10.009214 10.125042  8.783769
 ```
 
 ```r
@@ -537,7 +551,7 @@ cluster_profiles
 
 ```
 ##  1  2  3  4  5 
-##  6 14  5 10 14
+## 14  5  6 10 14
 ```
 
 ```r
