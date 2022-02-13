@@ -2,7 +2,9 @@
 title: "Conjoint Analysis of Chocolate Preferences"
 author: "Calvin Yen"
 date: "2/12/2022"
-output: html_document
+output: 
+  html_document:
+    keep_md: true
 ---
 
 ```{r setup, include=FALSE}
@@ -53,15 +55,18 @@ head(cprof)
 dim(csimp)
 head(csimp)
 
+# Convert rankings to scores
+cprefm <- caRankToScore(cprefm)
+
 ```
 
 ## Partworth Estimation
 
-Partworth estimation was performed at both individual and aggregate levels.  The individual-level model substantially outperformed the aggregate-level model.  
+Partworth estimation was performed at individual, aggregate, and segment levels.  The individual-level model significantly outperformed both the aggregate and segment-level models.  
 
 ### Individual-level estimation
 
-Partworth utilities were first estimated at an individual level.  Profiles were then predicted for each individual by taking the profile with the highest utility.  Profile selections were correctly predicted for 41 of 87 (47%) of respondents. 
+Partworth utilities were first estimated at an individual level.  Profiles were then predicted for each individual by taking the profile with the highest utility.  Profile selections were correctly predicted for 54 of 87 (62%) of respondents. 
 
 ```{r indiv}
 # Compute partworth utilities for each individual
@@ -82,7 +87,6 @@ indiv_profile_actual <- apply(cprefm, 1, which.max)
 sum(indiv_profile_pred == indiv_profile_actual) / length(indiv_profile_actual)
 
 # Determine attribute importances for first 10 individuals
-
 attr_importances <- caImportance(y=cprefm[1,], cprof)
 attr_importances <- data.frame(t(as.matrix(attr_importances)))
 colnames(attr_importances) <- colnames(cprof)
@@ -94,14 +98,19 @@ for (i in 2:num_profiles) {
 }
 attr_importances
 
+
+
 ```
 
 
 ### Aggregate-level estimation
 
-Partworth utilities were then estimated at an aggregate level.  In this model, all individuals are assumed to have homogeneous preferences and hence share the same utility coefficients. Using the aggregate model, we find that profile 7 is the most desirable.  35 out of 87 (40%) respondents chose profile 7. 
+Partworth utilities were then estimated at an aggregate level.  In this model, all individuals are assumed to have homogeneous preferences and hence share the same utility coefficients. Using the aggregate model, we find that profile 14 is the most desirable.  Since the respondents' chocolate profile preferences are diffuse and spread across several profiles, the aggregate model does not perform well with only 15% correctness.    
 
 ``` {r aggregate}
+# Profiles most preferred by respondents
+table(indiv_profile_actual)
+
 # Compute partworth utilities at an aggregate level
 # First method - use caUtilities function
 agg_partutilities1 <- caUtilities(y=cprefm, x=cprof, z=clevn)
@@ -192,7 +201,7 @@ ggplot(pc_clusters, aes(x=PC1, y=PC2)) +
 
 ## Cluster-based Model
 
-The results of the cluster analysis were used to build a cluster-based model--respondents' chocolate preferences were predicted based on their cluster (i.e., segment). 
+The results of the cluster analysis were used to build a cluster-based model--respondents' chocolate preferences were predicted based on their cluster (i.e., segment). The cluster-level model outperformed the aggregate model, but does not sufficiently capture individualized preferences.  Increasing the number of clusters may raise this model's performance.  
 
 ``` {r cluster_model}
 # Find utility coefficients for each segment
