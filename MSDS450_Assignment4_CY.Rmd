@@ -1,0 +1,219 @@
+---
+title: "Conjoint Analysis of Chocolate Preferences"
+author: "Calvin Yen"
+date: "2/12/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(conjoint)
+library(ggplot2)
+library(stats)
+```
+
+## Exploratory Data Analysis
+
+87 respondents participated in a conjoint study to understand consumer chocolate preferences.  Five product attributes were studied:
+
+* kind - chocolate type (milk, walnut, delicacies, dark)
+* price - low, average, high
+* packing - product packaging (paperback, hardback)
+* weight - light, middle, heavy
+* calorie - caloric content of the chocolate (little, much)
+
+The chocolate dataset comprises five data frames:
+
+* clevn - vector of attribute level names
+* cpref - raw vector of profile preferences for all 87 respondents (87 respondents with ratings for each of the 16 profiles)
+* cprefm - matrix of profile preferences (87 respondents with ratings for each of the 16 profiles)
+* cprof - matrix of profiles (16 profiles with 5 attributes each)
+* csimp - matrix of simulation profiles
+
+```{r data}
+data(chocolate, package='conjoint')
+
+# Attribute levels
+dim(clevn)
+head(clevn)
+
+# Respondent profile preferences - raw
+dim(cpref)
+head(cpref)
+
+# Respondent profile preferences
+dim(cprefm)
+head(cprefm)
+
+# Product profiles
+dim(cprof)
+head(cprof)
+
+# Simulated product profiles
+dim(csimp)
+head(csimp)
+
+```
+
+## Partworth Estimation
+
+Partworth estimation was performed at both individual and aggregate levels.  The individual-level model substantially outperformed the aggregate-level model.  
+
+### Individual-level estimation
+
+Partworth utilities were first estimated at an individual level.  Profiles were then predicted for each individual by taking the profile with the highest utility.  Profile selections were correctly predicted for 41 of 87 (47%) of respondents. 
+
+```{r indiv}
+# Compute partworth utilities for each individual
+indiv_partutilities <- caPartUtilities(y=cprefm, x=cprof, z=clevn)
+head(indiv_partutilities)
+
+# Compute total utility for each individual
+indiv_totalutilities <- caTotalUtilities(y=cprefm, x=cprof)
+head(indiv_totalutilities)
+
+# Predict the profile chosen by each individual
+indiv_profile_pred <- apply(indiv_totalutilities, 1, which.max)
+
+# Find the profile most preferred by each individual
+indiv_profile_actual <- apply(cprefm, 1, which.max)
+
+# Find proportion of correct predictions
+sum(indiv_profile_pred == indiv_profile_actual) / length(indiv_profile_actual)
+
+# Determine attribute importances for first 10 individuals
+
+attr_importances <- caImportance(y=cprefm[1,], cprof)
+attr_importances <- data.frame(t(as.matrix(attr_importances)))
+colnames(attr_importances) <- colnames(cprof)
+
+num_profiles <- 10
+for (i in 2:num_profiles) {
+  attr_imp_i <- caImportance(y=cprefm[i,], cprof)
+  attr_importances <- rbind(attr_importances, attr_imp_i)
+}
+attr_importances
+
+```
+
+
+### Aggregate-level estimation
+
+Partworth utilities were then estimated at an aggregate level.  In this model, all individuals are assumed to have homogeneous preferences and hence share the same utility coefficients. Using the aggregate model, we find that profile 7 is the most desirable.  35 out of 87 (40%) respondents chose profile 7. 
+
+``` {r aggregate}
+# Compute partworth utilities at an aggregate level
+# First method - use caUtilities function
+agg_partutilities1 <- caUtilities(y=cprefm, x=cprof, z=clevn)
+
+# Second method - average individual partworth utilities
+agg_partutilities2 <- apply(indiv_partutilities, 2, mean)
+agg_partutilities2
+
+# Calculate estimated profile
+# Dummy code the matrix of profiles
+cprof_factor <- data.frame(lapply(cprof, as.factor))
+cprof_dummyenc <- model.matrix(~., cprof_factor)
+
+# Match attribute names between dummy-encoded profile matrix and utility coefficients
+attr_names <- c('(Intercept)')
+for (col in colnames(cprof)) {
+  col_values <- unique(cprof[[col]])
+  attr_name <- paste(col, sort(col_values), sep='')
+  attr_names <- c(attr_names, attr_name)
+}
+
+names(agg_partutilities1) <- attr_names
+agg_partutilities <- agg_partutilities1[colnames(cprof_dummyenc)]
+
+# Multiply profile codes by utility coefficients to determine the utility of each profile
+profile_utilities <- cprof_dummyenc %*% agg_partutilities
+profile_utilities
+
+# Find profile with the highest utility
+best_profile <- which.max(profile_utilities)
+best_profile
+
+# Find proportion of respondents that chose the profile predicted by the model
+sum(indiv_profile_actual == best_profile) / length(indiv_profile_actual)
+
+```
+## Segmentation
+
+Respondents were also segmented based on their individual-level partworth utilities. Chocolate type (e.g., milk, walnut, dark) and price were the most relevant factors in determining consumer preferences. The following segments were identified:
+
+* Segment 1: Milk and walnut chocolate lovers.  These consumers like light chocolates and are not averse to high-calorie sweets. 
+* Segment 2: Dark chocolate aficianados.  These consumers have moderate price sensitivity and prefer chocolates in medium price ranges. 
+* Segment 3: Eat-any-chocolate consumers.  These consumers like chocolates of any kind with a strong preference for high-end chocolates. 
+* Segment 4: Opinionated eaters.  These consumers love dark chocolate but dislike other chocolate types, with a particularly strong aversion to milk chocolate. 
+* Segment 5: Delicacy connoisseurs.  These consumers strongly prefer handmade chocolate delicacies over all other types of chocolate. 
+
+``` {r clustering}
+# Product attribute importances
+caImportance(y=cprefm, x=cprof)
+
+# Try and evaluate K-Means with varying numbers of clusters
+max_k <- 10
+ss_ratios <- data.frame(numeric(0), numeric(0))
+
+for (k in 2:max_k) {
+  km <- kmeans(indiv_partutilities, centers=k, nstart=20)
+  ss_ratio <- km$betweenss / km$totss
+  ss_ratios <- rbind(ss_ratios, c(k, ss_ratio))
+}
+
+colnames(ss_ratios) <- c('num_clusters', 'ss_ratio')
+
+# Plot SS ratios to find optimal number of clusters
+ggplot(ss_ratios, aes(x=num_clusters, y=ss_ratio)) +
+  geom_line(col='blue', linetype='dotted') +
+  geom_point() + 
+  labs(title='KMeans Clustering: BSS/TSS Ratio',
+       x='Number of Clusters',
+       y='BetweenSS / TotalSS')
+
+best_k <- kmeans(indiv_partutilities, centers=5, nstart=20)
+
+# Visualize clustering results
+# Run PCA to reduce dimensions to 2D for cluster visualization
+pca <- prcomp(indiv_partutilities)
+summary(pca)
+
+pc_clusters <- data.frame(PC1=pca$x[, 'PC1'], PC2=pca$x[, 'PC2'], cluster=best_k$cluster)
+
+ggplot(pc_clusters, aes(x=PC1, y=PC2)) +
+  geom_point(aes(color=factor(cluster))) +
+  labs(title='Chocolate Preference Cluster Results') +
+  scale_color_brewer(palette='RdYlBu') +
+  theme(axis.text=element_blank())
+
+
+```
+
+## Cluster-based Model
+
+The results of the cluster analysis were used to build a cluster-based model--respondents' chocolate preferences were predicted based on their cluster (i.e., segment). 
+
+``` {r cluster_model}
+# Find utility coefficients for each segment
+cluster_coef <- best_k$centers
+cluster_coef
+
+colnames(cluster_coef) <- attr_names
+cluster_coef <- cluster_coef[, colnames(cluster_coef) %in% colnames(cprof_dummyenc)]
+
+# Multiply profile codes by utility coefficients to determine the utility of each profile
+cluster_prof_utilities <- cprof_dummyenc %*% t(cluster_coef)
+cluster_prof_utilities
+
+# Find the profile that maximizes each segment's utility
+cluster_profiles <- apply(cluster_prof_utilities, 2, which.max)
+cluster_profiles
+
+cprefm$cluster <- best_k$cluster
+cprefm$cluster_profile <- cluster_profiles[cprefm$cluster]
+
+sum(indiv_profile_actual == cprefm$cluster_profile) / length(indiv_profile_actual)
+
+
+```
