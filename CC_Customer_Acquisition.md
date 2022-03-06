@@ -47,23 +47,15 @@ column_missingval <- apply(is.na(data), 2, sum)
 
 # Flag columns that have more than 5% missing data
 column_missingval <- column_missingval[column_missingval > 0.05*nrow(complete.customer.data.frame)]
-kable(head(column_missingval, 10), align='l')
+head(column_missingval, 10)
 ```
 
-
-
-|               |x     |
-|:--------------|:-----|
-|ZIP4           |3667  |
-|READ_ALL_TYPES |10107 |
-|BOOK_CLUB      |10107 |
-|VIDEO_CLUB     |10107 |
-|AMEX_PREM      |10107 |
-|AMEX_REG       |10107 |
-|DEBIT_CC       |10107 |
-|DISC_PREM      |10107 |
-|DISC_REG       |10107 |
-|OTHER_PREM_CC  |10107 |
+```
+##           ZIP4 READ_ALL_TYPES      BOOK_CLUB     VIDEO_CLUB      AMEX_PREM 
+##           3667          10107          10107          10107          10107 
+##       AMEX_REG       DEBIT_CC      DISC_PREM       DISC_REG  OTHER_PREM_CC 
+##          10107          10107          10107          10107          10107
+```
 
 ```r
 # Remove columns with missing data
@@ -300,19 +292,16 @@ data_p <- cbind(data_p, select_data[, ..response_cols])
 
 dummy_enc <- dummyVars(' ~ .', data=data_p, fullRank=TRUE)
 data_p <- as.data.frame(predict(dummy_enc, data_p))
-
-# Visualize correlations between variables
-# cor_mat <- cor(data_p[, c(60:120)])
-# cor_mat <- melt(cor_mat)
-# ggplot(data=cor_mat, aes(x=Var1, y=Var2, fill=value)) +
-#   geom_tile()
 ```
 
 ### Model Build
 
 
 ```r
-### Train logistic regression classifier
+### Try three types of classifiers: logistic regression, random forest, and
+### kmeans clustering with a separate classifier for each cluster
+
+# Train logistic regression classifier
 train <- split == 'TRAIN'
 
 glm.fit <- glm(RESPONSE16 ~ .,
@@ -344,7 +333,7 @@ sum(actual)
 glm_perf <- sum(glm.pred == actual) / length(actual)
 
 
-### Train RF classifier
+# Train RF classifier
 data_p <- data.table(data_p)
 data_p[, RESPONSE16 := as.factor(RESPONSE16)]
 
@@ -358,6 +347,90 @@ rf.pred <- predict(rf.fit, newdata=xtest)
 rf.pred <- as.numeric(as.character(rf.pred))
 
 rf_perf <- sum(rf.pred == actual) / length(actual)
+
+
+# Train kmeans + logistic regression classifiers
+
+upper_k <- 10
+withinss <- numeric(0)
+
+for (k in 1:upper_k) {
+  km <- kmeans(data_p[train, !c('RESPONSE16')], centers=k, nstart=10)
+  avg_withinss <- mean(km$withinss)
+  withinss <- c(withinss, avg_withinss)
+}
+
+# Plot kmeans results
+plot(x=1:upper_k, withinss, 
+     type='b',
+     col='blue',
+     main='KMeans Results - Clustering Sum of Squares',
+     xlab='Number of Clusters',
+     ylab='Within Cluster Sum of Squares')
+```
+
+![](CC_Customer_Acquisition_files/figure-html/Modeling-1.png)<!-- -->
+
+```r
+best_k <- 3
+best_km <- kmeans(data_p[train, !c('RESPONSE16')], centers=best_k, nstart=10)
+
+# Visualize clusters
+pc <- prcomp(data_p[train, !c('RESPONSE16')])
+pc_clusters <- data.frame(PC1=pc$x[, 'PC1'], PC2=pc$x[, 'PC2'], Cluster=best_km$cluster)
+ggplot(data=pc_clusters,
+       aes(x=PC1, y=PC2, col=factor(Cluster))) +
+  geom_point() +
+  xlim(c(-10,10)) +
+  ylim(c(-5,20)) +
+  scale_color_brewer() +
+  labs(title='Clustering Results (Principal Component Values)') +
+  scale_color_brewer(palette='Paired', 'Cluster')
+```
+
+![](CC_Customer_Acquisition_files/figure-html/Modeling-2.png)<!-- -->
+
+```r
+# Predict test set clusters
+xtrain = data_p[train]
+xtrain$RESPONSE16 <- as.numeric(as.character(xtrain$RESPONSE16))
+xtest = data_p[!train, !c('RESPONSE16')]
+
+# Function to get minimum Euclidean distance between data point and cluster centroid
+euc_dist <- function(x, centroids) {
+  dists <- numeric(0)
+  for (i in 1:nrow(centroids)) {
+    dist <- sqrt(sum(x - centroids[i, ])^2)
+    dists <- c(dists, dist)
+  }
+  return(which.min(dists))
+}
+
+xtest_clusters <- apply(xtest, 1, function(x) euc_dist(x, best_km$centers))
+xtest$cluster <- xtest_clusters
+
+# Build separate model for each cluster
+list_models = list()
+for (i in 1:best_k) {
+  cluster_data <- xtrain[best_km$cluster == i]
+  glm_c.fit <- glm(RESPONSE16 ~ .,
+               data=cluster_data)
+  list_models[[i]] <- glm_c.fit
+}
+
+# Predict mail responses based on cluster
+predict_resp <- function(x, models) {
+  cluster <- x['cluster']
+  model <- models[[cluster]]
+  obs <- data.frame(t(as.matrix(x[names(x) != 'cluster'])))
+  result <- suppressWarnings(predict(model, obs))
+  return(result)
+}
+
+cluster.glm.probs <- apply(xtest, 1, function(x) predict_resp(x, list_models))
+cluster.glm.pred <- ifelse(cluster.glm.probs > 0.5, 1, 0)
+
+cluster_glm_perf <- sum(cluster.glm.pred == actual) / length(actual)
 ```
 
 ### Model Evaluation
@@ -366,11 +439,14 @@ rf_perf <- sum(rf.pred == actual) / length(actual)
 ```r
 ### Compute evaluation metrics for both models - TPR, FPR, Precision, Recall, F1 score
 pred_perf <- prediction(glm.pred, actual)
-roc_data <- performance(pred_perf, 'tpr', 'fpr')
 prec_rec <- performance(pred_perf, 'prec', 'rec')
 
-pred_pref_rf <- prediction(rf.pred, actual)
-prec_rec_rf <- performance(pred_pref_rf, 'prec', 'rec')
+pred_perf_rf <- prediction(rf.pred, actual)
+prec_rec_rf <- performance(pred_perf_rf, 'prec', 'rec')
+
+cluster_pred_perf <- prediction(cluster.glm.pred, actual)
+prec_rec_rf_cluster <- performance(cluster_pred_perf, 'prec', 'rec')
+roc_data <- performance(cluster_pred_perf, 'tpr', 'fpr')
 
 glm_prec <- prec_rec@x.values[[1]][2]
 glm_rec <- prec_rec@x.values[[1]][2]
@@ -380,9 +456,13 @@ rf_prec <- prec_rec_rf@x.values[[1]][2]
 rf_rec <- prec_rec_rf@y.values[[1]][2]
 rf_f1_score <- 2 * rf_prec * rf_rec / (rf_prec + rf_rec)
 
-overall_perf <- data.frame(Model=c('Logistic Regression', 'Random Forest'), 
-                           Accuracy=c(glm_perf, rf_perf),
-                           F1_Score=c(glm_f1_score, rf_f1_score))
+cluster_prec <- prec_rec_rf_cluster@x.values[[1]][2]
+cluster_rec <- prec_rec_rf_cluster@y.values[[1]][2]
+cluster_f1_score <- 2 * cluster_prec * cluster_rec / (cluster_prec + cluster_rec)
+
+overall_perf <- data.frame(Model=c('Logistic Regression', 'KMeans + Logistic', 'Random Forest'), 
+                           Accuracy=c(glm_perf, cluster_glm_perf, rf_perf),
+                           F1_Score=c(glm_f1_score, cluster_f1_score, rf_f1_score))
 
 kable(overall_perf, align='l')
 ```
@@ -392,10 +472,12 @@ kable(overall_perf, align='l')
 |Model               |Accuracy  |F1_Score  |
 |:-------------------|:---------|:---------|
 |Logistic Regression |0.9574382 |0.5737179 |
+|KMeans + Logistic   |0.9600054 |0.7601297 |
 |Random Forest       |0.9197406 |0.1465517 |
 
 ```r
-plot(roc_data, main='Logistic Regression - ROC Curve')
+plot(roc_data, main='Logistic Regression - ROC Curve',
+     col='blue')
 ```
 
 ![](CC_Customer_Acquisition_files/figure-html/Evaluation-1.png)<!-- -->
