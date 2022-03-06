@@ -1,6 +1,6 @@
 ---
-title: "MSDS 450 - Assignment 5"
-author: "Calvin Yen, Vivian Jiang, Saud Khan, Nikhila Vudattu"
+title: "CBC Analysis"
+author: "Calvin Yen"
 date: "2/24/2022"
 output: 
   html_document:
@@ -10,7 +10,7 @@ output:
 
 
 
-## Assignment 5 - CBC Analysis for Star Technologies
+## CBC Analysis for Star Technologies
 
 ### Data Preparation
 
